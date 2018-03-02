@@ -8,12 +8,22 @@ Parses the output of a traceroute execution into an AST (Abstract Syntax Tree).
 
 import re
 
-RE_HEADER = re.compile(r'^traceroute to (\S+)\s+\((?:(\d+\.\d+\.\d+\.\d+)|([0-9a-fA-F:]+))\)')
-RE_HOP = re.compile(r'^\s*(\d+)\s+([\s\S]+?(?=^\s*\d+\s+|^_EOS_))', re.M)
+STR_RE_HOSTNAME = r'[a-zA-z0-9\.-]+'
+STR_RE_IPV4 = r'\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}'
+STR_RE_IPV6 = r'[0-9a-fA-F:]+'
+STR_RE_FLOAT = r'\d+(?:\.?\d+)?'
+STR_RE_IP = r'(?:{}|{})'.format(STR_RE_IPV4, STR_RE_IPV6)
+STR_RE_NAME = r'(?:{}|{}|{})'.format(STR_RE_HOSTNAME, STR_RE_IPV4, STR_RE_IPV6)
 
+RE_HEADER = re.compile(
+        r'^traceroute to ({})\s+\(({})\), \d+ hops max, \d+ byte packets'.format(
+            STR_RE_NAME, STR_RE_IP))
+RE_HOP = re.compile(r'^\s*(\d+)\s+([\s\S]+?(?=^\s*\d+\s+|^_EOS_$))', re.M)
 RE_PROBE_ASN = re.compile(r'^\[AS(\d+)\]$')
-RE_PROBE_NAME = re.compile(r'^([a-zA-z0-9\.-]+)$|^(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})$|^([0-9a-fA-F:]+)$')
-RE_PROBE_RTT = re.compile(r'^(\d+(?:\.?\d+)?)$')
+RE_PROBE_NAME = re.compile(r'^({})$'.format(STR_RE_NAME))
+RE_PROBE_IP = re.compile(r'^\(({})\)$'.format(STR_RE_IP))
+RE_PROBE_ONLY_IP = re.compile(r'^({})$'.format(STR_RE_IP))
+RE_PROBE_RTT = re.compile(r'^({})$'.format(STR_RE_FLOAT))
 RE_PROBE_ANNOTATION = re.compile(r'^(!\w*)$')
 RE_PROBE_TIMEOUT = re.compile(r'^(\*)$')
 
@@ -47,12 +57,6 @@ class Hop(object):
 
     def add_probe(self, probe):
         """Adds a Probe instance to this hop's results."""
-        if self.probes:
-            probe_last = self.probes[-1]
-            if not probe.ip and probe.rtt != None:
-                probe.asn = probe_last.asn
-                probe.ip = probe_last.ip
-                probe.name = probe_last.name
         self.probes.append(probe)
 
     def __str__(self):
@@ -74,10 +78,10 @@ class Probe(object):
     """
     def __init__(self, asn=None, name=None, ip=None, rtt=None, anno=''):
         self.asn = asn # Autonomous System number
-        self.name = name
+        self.name = name # Name (reverse DNS) (blank when using 'traceroute -n')
         self.ip = ip
         self.rtt = rtt # RTT in ms
-        self.anno = anno # Annotation, such as !H, !N, !X, etc
+        self.anno = anno # Annotation, such as '!H', '!N', '!X', etc
 
     def __str__(self):
         if self.rtt != None:
@@ -117,69 +121,90 @@ def loads(data):
         idx = int(match_hop[0])
         hop = Hop(idx)
 
-        # Parse probes data: [<asn>] | <name> | <(IP)> | <rtt> | 'ms' | '*'
-        probes_data = match_hop[1].split()
-        # Get rid of 'ms': [<asn>] | <name> | <(IP)> | <rtt> | '*'
-        probes_data = filter(lambda s: s.lower() != 'ms', probes_data)
-
-        i = 0
-        while i < len(probes_data):
-            # For each hop parse probes
+        # For each hop, iterate over its lines
+        # Each line represents probes of the same host (asn/name/ip).
+        for probes_line in match_hop[1].splitlines():
             asn = None
             name = None
             ip = None
-            rtt = None
-            anno = ''
+            last_rtt = None
+            next_check = 'timeout'
 
-            # RTT check comes first because RE_PROBE_NAME can confuse rtt with an IP as name
-            # The regex RE_PROBE_NAME can be improved
-            if RE_PROBE_RTT.match(probes_data[i]):
-                # Matched rtt, so asn, name and IP have been parsed before
-                rtt = float(probes_data[i])
-                i += 1
-            elif RE_PROBE_ASN.match(probes_data[i]):
-                # Matched a ASN, so next elements are name, IP and rtt
-                asn = int(RE_PROBE_ASN.match(probes_data[i]).group(1))
-                name = probes_data[i+1]
-                if probes_data[i+2].startswith('('):
-                    ip = probes_data[i+2].strip('()')
-                    rtt = float(probes_data[i+3])
-                    i += 4
-                else:
-                    ip = name
-                    name = None
-                    rtt = float(probes_data[i+2])
-                    i += 3
-            elif RE_PROBE_NAME.match(probes_data[i]):
-                # Matched a name, so next elements are IP and rtt
-                name = probes_data[i]
-                if probes_data[i+1].startswith('('):
-                    ip = probes_data[i+1].strip('()')
-                    rtt = float(probes_data[i+2])
-                    i += 3
-                else:
-                    ip = name
-                    name = None
-                    rtt = float(probes_data[i+1])
-                    i += 2
-            elif RE_PROBE_TIMEOUT.match(probes_data[i]):
-                # Its a timeout, so maybe asn, name and IP have been parsed before
-                # or maybe not. But it's Hop job to deal with it.
-                rtt = None
-                i += 1
-            else:
-                ext = "i: %d\nprobes_data: %s\nname: %s\nip: %s\nrtt: %s\nanno: %s" % (i, probes_data, name, ip, rtt, anno)
-                raise ParseError("Parse error \n%s" % ext)
-            # Check for annotation
-            try:
-                if RE_PROBE_ANNOTATION.match(probes_data[i]):
-                    anno = probes_data[i]
-                    i += 1
-            except IndexError:
-                pass
+            # Split line into tokens: <[asn]> | <name> | <(ip)> | <rtt> | 'ms' | '*' | '!<anno>'
+            probes_data = probes_line.split()
+            # Get rid of 'ms'
+            probes_data = filter(lambda s: s.lower() != 'ms', probes_data)
 
-            probe = Probe(asn, name, ip, rtt, anno)
-            hop.add_probe(probe)
+            # Parse tokens
+            for token in probes_data:
+                # Check initial timeout (optional)
+                # Case which probe data starts with at least one timeout.
+                if next_check == 'timeout':
+                    match = RE_PROBE_TIMEOUT.match(token)
+                    if match:
+                        hop.add_probe(Probe())
+                        continue
+                    else:
+                        next_check = 'asn'
+                # Check ASN (optional)
+                if next_check == 'asn':
+                    next_check = 'name'
+                    match = RE_PROBE_ASN.match(token)
+                    if match:
+                        asn = int(match.group(1))
+                        continue
+                # Check name
+                if next_check == 'name':
+                    next_check = 'ip'
+                    name = RE_PROBE_NAME.match(token).group(1)
+                    continue
+                # Check IP (optional)
+                if next_check == 'ip':
+                    next_check = 'rtt'
+                    match = RE_PROBE_IP.match(token)
+                    if match:
+                        ip = match.group(1)
+                        continue
+                    else:
+                        # If not match IP, 'name' actually is the IP.
+                        ip = RE_PROBE_ONLY_IP.match(name).group(1)
+                        name = None
+                # Check RTT (first RTT)
+                if next_check == 'rtt':
+                    match = RE_PROBE_TIMEOUT.match(token)
+                    if match:
+                        hop.add_probe(Probe())
+                        continue
+                    else:
+                        next_check = 'rtt_or_anno'
+                        last_rtt = float(RE_PROBE_RTT.match(token).group(1))
+                        continue
+                # Check RTT (new RTT) or annotation (to 'last_rtt')
+                if next_check == 'rtt_or_anno':
+                    match = RE_PROBE_TIMEOUT.match(token)
+                    if match:
+                        next_check = 'rtt'
+                        if last_rtt:
+                            hop.add_probe(Probe(asn, name, ip, last_rtt))
+                            last_rtt = None
+                        hop.add_probe(Probe())
+                        continue
+                    else:
+                        match = RE_PROBE_ANNOTATION.match(token)
+                        if match:
+                            next_check = 'rtt'
+                            anno = match.group(1)
+                            hop.add_probe(Probe(asn, name, ip, last_rtt, anno))
+                            last_rtt = None
+                            continue
+                        else:
+                            if last_rtt:
+                                hop.add_probe(Probe(asn, name, ip, last_rtt))
+                            last_rtt = float(RE_PROBE_RTT.match(token).group(1))
+                            continue
+            # Process remaining RTT
+            if last_rtt:
+                 hop.add_probe(Probe(asn, name, ip, last_rtt))
 
         traceroute.add_hop(hop)
 
