@@ -32,7 +32,7 @@ class Traceroute(object):
         self.hops.append(hop)
 
     def __str__(self):
-        text = "Traceroute for {:s} ({:s})\n\n".format(self.dest_name, self.dest_ip)
+        text = "Traceroute for {0:s} ({1:s})\n\n".format(self.dest_name, self.dest_ip)
         for hop in self.hops:
             text += str(hop)
         return text
@@ -57,7 +57,7 @@ class Hop(object):
         self.probes.append(probe)
 
     def __str__(self):
-        text = "{:>3d} ".format(self.idx)
+        text = "{0:>3d} ".format(self.idx)
         text_len = len(text)
         for n, probe in enumerate(self.probes):
             text_probe = str(probe)
@@ -84,14 +84,14 @@ class Probe(object):
         if self.rtt != None:
             text = ""
             if self.asn != None:
-                text += "[AS{:d}] ".format(self.asn)
+                text += "[AS{0:d}] ".format(self.asn)
             if self.name:
-                text += "{:s} ({:s}) ".format(self.name, self.ip)
+                text += "{0:s} ({1:s}) ".format(self.name, self.ip)
             else:
-                text += "{:s} ".format(self.ip)
-            text += "{:1.3f} ms".format(self.rtt)
+                text += "{0:s} ".format(self.ip)
+            text += "{0:1.3f} ms".format(self.rtt)
             if self.anno:
-                text += " {:s}".format(self.anno)
+                text += " {0:s}".format(self.anno)
             text += "\n"
         else:
             text = "*\n"
@@ -109,8 +109,8 @@ def loads(data):
         dest_name = match_dest.group(1)
         dest_ip = match_dest.group(2)
     else:
-        ext = "header_line: {:s}".format(header_line)
-        raise ParseError("Parse error \n{:s}".format(ext))
+        ext = "header_line: {0:s}".format(header_line)
+        raise ParseError("Parse error \n{0:s}".format(ext))
 
     # The Traceroute is the root of the tree.
     traceroute = Traceroute(dest_name, dest_ip)
@@ -134,7 +134,7 @@ def loads(data):
             # Parse probes data: [<asn>] | <name> | <(IP)> | <rtt> | 'ms' | '*'
             probes_data = probes_line.split()
             # Get rid of 'ms': [<asn>] | <name> | <(IP)> | <rtt> | '*'
-            probes_data = filter(lambda s: s.lower() != 'ms', probes_data)
+            probes_data = list(filter(lambda s: s.lower() != 'ms', probes_data))
 
             i = 0
             while i < len(probes_data):
@@ -170,9 +170,9 @@ def loads(data):
                     # or maybe not. But it's Hop job to deal with it.
                     i += 1
                 else:
-                    ext = "i: {:d}\nprobes_data: {:s}\nasn: {:s}\nname: {:s}\nip: {:s}\nrtt: {:s}\nanno: {:s}".format(
+                    ext = "i: {0:d}\nprobes_data: {1:s}\nasn: {2:s}\nname: {3:s}\nip: {4:s}\nrtt: {5:s}\nanno: {6:s}".format(
                             i, probes_data, asn, name, ip, rtt, anno)
-                    raise ParseError("Parse error \n{:s}".format(ext))
+                    raise ParseError("Parse error \n{0:s}".format(ext))
                 # Check for annotation
                 try:
                     if RE_PROBE_ANNOTATION.match(probes_data[i]):
