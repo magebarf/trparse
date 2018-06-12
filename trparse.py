@@ -2,6 +2,7 @@
 
 """
 Copyright (C) 2015 Luis Benitez
+Copyright (C) 2018 Rarylson Freitas
 
 Parses the output of a traceroute execution into an AST (Abstract Syntax Tree).
 """
