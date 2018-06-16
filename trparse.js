@@ -1,14 +1,9 @@
-# -*- coding: utf-8 -*-
-
 """
 Copyright (C) 2015 Luis Benitez
 Copyright (C) 2018 Rarylson Freitas
 
 Parses the output of a traceroute execution into an AST (Abstract Syntax Tree).
 """
-
-import re
-
 RE_HEADER = re.compile(r'^traceroute to (\S+)\s+\((?:(\d+\.\d+\.\d+\.\d+)|([0-9a-fA-F:]+))\)')
 RE_HOP = re.compile(r'^\s*(\d+)\s+([\s\S]+?(?=^\s*\d+\s+|^_EOS_))', re.M)
 
@@ -18,86 +13,6 @@ RE_PROBE_IP = re.compile(r'^\((\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}|[0-9a-fA-F:]+)
 RE_PROBE_RTT = re.compile(r'^(\d+(?:\.?\d+)?)$')
 RE_PROBE_ANNOTATION = re.compile(r'^(!\w*)$')
 RE_PROBE_TIMEOUT = re.compile(r'^(\*)$')
-
-
-class Traceroute(object):
-    """
-    Abstraction of a traceroute result.
-    """
-    def __init__(self, dest_name, dest_ip):
-        self.dest_name = dest_name
-        self.dest_ip = dest_ip
-        self.hops = []
-
-    def add_hop(self, hop):
-        self.hops.append(hop)
-
-    def __str__(self):
-        text = "Traceroute for {0:s} ({1:s})\n\n".format(self.dest_name, self.dest_ip)
-        for hop in self.hops:
-            text += str(hop)
-        return text
-
-
-class Hop(object):
-    """
-    Abstraction of a hop in a traceroute.
-    """
-    def __init__(self, idx):
-        self.idx = idx # Hop count, starting at 1 most of the times
-        self.probes = [] # Series of Probe instances
-
-    def add_probe(self, probe):
-        """Adds a Probe instance to this hop's results."""
-        if self.probes:
-            probe_last = self.probes[-1]
-            if not probe.ip and probe.rtt != None:
-                probe.asn = probe_last.asn
-                probe.ip = probe_last.ip
-                probe.name = probe_last.name
-        self.probes.append(probe)
-
-    def __str__(self):
-        text = "{0:>3d} ".format(self.idx)
-        text_len = len(text)
-        for n, probe in enumerate(self.probes):
-            text_probe = str(probe)
-            if n:
-                text += (text_len*" ")+text_probe
-            else:
-                text += text_probe
-        text += "\n"
-        return text
-
-
-class Probe(object):
-    """
-    Abstraction of a probe in a traceroute.
-    """
-    def __init__(self, asn=None, name=None, ip=None, rtt=None, anno=''):
-        self.asn = asn # Autonomous System number
-        self.name = name
-        self.ip = ip
-        self.rtt = rtt # RTT in ms
-        self.anno = anno # Annotation, such as !H, !N, !X, etc
-
-    def __str__(self):
-        if self.rtt != None:
-            text = ""
-            if self.asn != None:
-                text += "[AS{0:d}] ".format(self.asn)
-            if self.name:
-                text += "{0:s} ({1:s}) ".format(self.name, self.ip)
-            else:
-                text += "{0:s} ".format(self.ip)
-            text += "{0:1.3f} ms".format(self.rtt)
-            if self.anno:
-                text += " {0:s}".format(self.anno)
-            text += "\n"
-        else:
-            text = "*\n"
-        return text
-
 
 def loads(data):
     """Parser entry point. Parses the output of a traceroute execution"""
