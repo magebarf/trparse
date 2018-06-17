@@ -1,13 +1,12 @@
-# trparse
+# trparse.js
+JavaScript version forked from python module trparse: https://github.com/lbenitez000/trparse
 
 Parses the output of a traceroute or traceroute6 execution into an AST
-(Abstract Syntax Tree) built up from:
+(Abstract Syntax Tree) returned as a object built up from:
 
 -   a Traceroute root
 -   Hop inner nodes
 -   Probe leaf nodes
-
-Every node is printable and the entire tree is printable from the root.
 
 Supports the following info. Parsed info in bold:
 
@@ -44,7 +43,7 @@ probe = hop.probes[0]
 print probe.ip
 ```
 
-# Data structures
+# Data structures - TBD
 
 - Traceroute
 	- dest_name :: \<str\>
